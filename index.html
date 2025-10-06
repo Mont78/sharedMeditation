@@ -86,7 +86,17 @@ document.getElementById('go').onclick = () => loadURL(document.getElementById('u
 
 function loadURL(src) {
   if (src.includes('youtube.com') || src.includes('youtu.be')) {
-    player.source = {type: 'video', sources: [{provider: 'youtube', src}]};
+    player.source = {
+  type: 'video',
+  sources: [{
+    provider: 'youtube',
+    src:  'https://youtu.be/VIDEO_ID',   // qualsiasi formato breve
+    // Plyr internamente tradurrà in youtube-nocookie.com
+  }],
+  poster: '',        // optional
+  // ---- aggiungi questa riga ----
+  origin: window.location.origin           // https://tuo-dominio.web.app
+};
   } else {
     v.src = src;
   }
