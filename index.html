@@ -111,17 +111,7 @@ document.getElementById('go').onclick = () => loadURL(document.getElementById('u
 
 function loadURL(src) {
   if (src.includes('youtube.com') || src.includes('youtu.be')) {
-    player.source = {
-  type: 'video',
-  sources: [{
-    provider: 'youtube',
-    src:  'https://youtu.be/VIDEO_ID',   // qualsiasi formato breve
-    // Plyr internamente tradurrà in youtube-nocookie.com
-  }],
-  poster: '',        // optional
-  // ---- aggiungi questa riga ----
-  origin: 'https://mont78.github.io'           // https://tuo-dominio.web.app
-};
+    player.source = {type: 'video', sources: [{provider: 'youtube', src}]};
   } else {
     v.src = src;
   }
