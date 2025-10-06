@@ -45,8 +45,19 @@ let peer;
 let uid = auth.currentUser.uid;
 const v = document.getElementById('v');
 const player = new Plyr(v, {youtube: { noCookie: false }});
+  
+/* ----------  room handling ---------- */
+if (!roomId) {
+  document.getElementById('create').onclick = () => {
+    roomId = Math.random().toString(36).slice(2,8);
+    history.replaceState({}, '', '?r=' + roomId);
+    startRoom();
+  };
+} else {
+  startRoom();
+}
 
-  /* 1.  if a source was already chosen, load it now */
+/* 1.  if a source was already chosen, load it now */
 const roomSource = ref(db, 'rooms/' + roomId + '/source');
 onValue(roomSource, snap => {
   if (!snap.exists()) return;          // nessuno ha ancora scelto
@@ -69,17 +80,6 @@ function loadYT(url){
   };
   set(ref(db, 'rooms/' + roomId + '/source'),
      {src:url, provider:'youtube'});
-}
-  
-/* ----------  room handling ---------- */
-if (!roomId) {
-  document.getElementById('create').onclick = () => {
-    roomId = Math.random().toString(36).slice(2,8);
-    history.replaceState({}, '', '?r=' + roomId);
-    startRoom();
-  };
-} else {
-  startRoom();
 }
 
 function startRoom() {
