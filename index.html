@@ -46,6 +46,31 @@ let uid = auth.currentUser.uid;
 const v = document.getElementById('v');
 const player = new Plyr(v, {youtube: { noCookie: false }});
 
+  /* 1.  if a source was already chosen, load it now */
+const roomSource = ref(db, 'rooms/' + roomId + '/source');
+onValue(roomSource, snap => {
+  if (!snap.exists()) return;          // nessuno ha ancora scelto
+  const {src, provider} = snap.val();
+  if (src && !player.currentSrc) {     // evita ricaricare due volte
+      player.source = {
+        type: 'video',
+        sources: [{provider, src}],
+        origin: window.location.origin  // ← risolve anche i problemi Safari
+      };
+  }
+});
+
+/* 2.  quando il primo utente sceglie, salvalo in Firebase */
+function loadYT(url){
+  player.source = {
+    type: 'video',
+    sources: [{provider:'youtube', src:url}],
+    origin: window.location.origin
+  };
+  set(ref(db, 'rooms/' + roomId + '/source'),
+     {src:url, provider:'youtube'});
+}
+  
 /* ----------  room handling ---------- */
 if (!roomId) {
   document.getElementById('create').onclick = () => {
