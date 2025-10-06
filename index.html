@@ -1,0 +1,140 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>ListenTogether</title>
+  <link rel="stylesheet" href="https://cdn.plyr.io/3.7.2/plyr.css"/>
+  <style>body{margin:0;font-family:system-ui;background:#111;color:#eee}
+         #topbar{padding:.6rem 1rem;background:#222}
+         input,button{padding:.4rem .8rem;margin-right:.5rem}
+         #drop{border:2px dashed #555;padding:2rem;text-align:center;margin:1rem}
+  </style>
+</head>
+<body>
+<div id="topbar">
+  <input id="url" placeholder="YouTube or direct .mp3/.mp4 URL">
+  <button id="go">Load</button>
+  <button id="create">Create room</button>
+  <span id="status">Not connected</span>
+</div>
+<div id="drop">or drop a local file here</div>
+<video id="v" controls style="width:100%"></video>
+
+<script type="module">
+/* ==========  CONFIG – paste your own ========== */
+const firebaseConfig = {
+  apiKey: "AIza…", authDomain: "…", databaseURL: "…", projectId: "…"
+};
+/* ============================================== */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+import { getDatabase, ref, push, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+import Plyr from "https://cdn.skypack.dev/plyr@3.7.2";
+import SimplePeer from "https://cdn.skypack.dev/simple-peer@9.11.1";
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+await signInAnonymously(auth);
+
+let roomId = new URLSearchParams(location.search).get('r');
+let owner = false;
+let ignore = false;               // ignore our own Firebase echoes
+let peer;
+let uid = auth.currentUser.uid;
+const v = document.getElementById('v');
+const player = new Plyr(v, {youtube: { noCookie: false }});
+
+/* ----------  room handling ---------- */
+if (!roomId) {
+  document.getElementById('create').onclick = () => {
+    roomId = Math.random().toString(36).slice(2,8);
+    history.replaceState({}, '', '?r=' + roomId);
+    startRoom();
+  };
+} else {
+  startRoom();
+}
+
+function startRoom() {
+  owner = true;
+  const roomRef = ref(db, 'rooms/' + roomId);
+  set(roomRef, {owner: uid, created: Date.now()});
+  listenCommands();
+  document.getElementById('status').textContent = 'Room: ' + roomId;
+}
+
+function listenCommands() {
+  onValue(ref(db, 'rooms/' + roomId + '/command'), snap => {
+    if (!snap.exists()) return;
+    const {op, at, uid:from} = snap.val();
+    if (from === uid) return;          // own echo
+    ignore = true;
+    if (op === 'play') { v.currentTime = at; player.play(); }
+    if (op === 'pause') { v.currentTime = at; player.pause(); }
+    ignore = false;
+  });
+}
+
+function broadcast(op) {
+  push(ref(db, 'rooms/' + roomId + '/command'), {op, at: v.currentTime, uid});
+}
+
+/* ----------  media source ---------- */
+document.getElementById('go').onclick = () => loadURL(document.getElementById('url').value);
+
+function loadURL(src) {
+  if (src.includes('youtube.com') || src.includes('youtu.be')) {
+    player.source = {type: 'video', sources: [{provider: 'youtube', src}]};
+  } else {
+    v.src = src;
+  }
+}
+
+/* drag-drop local file */
+const drop = document.getElementById('drop');
+drop.ondragover = e => e.preventDefault();
+drop.ondrop = async e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  drop.style.display = 'none';
+  if (!roomId) { alert('Create a room first'); return; }
+  if (owner) {
+    v.src = URL.createObjectURL(file);
+    await setupPeer(file);
+  } else {
+    await setupPeer();          // receiver side
+  }
+};
+
+/* ----------  WebRTC for local file ---------- */
+async function setupPeer(file) {
+  peer = new SimplePeer({ initiator: !!file, trickle: false });
+  if (file) {
+    peer.on('signal', data => push(ref(db, 'rooms/' + roomId + '/signal'), data));
+    const buf = await file.arrayBuffer();
+    peer.on('connect', () => peer.send(buf));
+  } else {
+    onValue(ref(db, 'rooms/' + roomId + '/signal'), snap => {
+      if (snap.exists()) peer.signal(snap.val());
+    });
+    peer.on('data', buf => {
+      const blob = new Blob([buf], {type: file ? file.type : 'video/mp4'});
+      v.src = URL.createObjectURL(blob);
+    });
+  }
+}
+
+/* ----------  sync play/pause ---------- */
+v.onplay  = () => !ignore && broadcast('play');
+v.onpause = () => !ignore && broadcast('pause');
+let last = 0;
+v.onseeked = () => {
+  if (Math.abs(v.currentTime - last) > 1) broadcast('play'); // seek ≈ play at new time
+  last = v.currentTime;
+};
+</script>
+</body>
+</html>
