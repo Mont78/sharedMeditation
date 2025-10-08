@@ -94,7 +94,7 @@ function listenCommands() {
   onValue(ref(db, 'rooms/' + roomId + '/command'), snap => {
     if (!snap.exists()) return;
     const {op, at, uid:from} = snap.val();
-    console.log('Valore cambiato - op:', uid.toString(), ' - uid:', uid);
+    console.log('Valore cambiato - op:', op, ' - uid:', uid);
     if (from === uid) return;          // own echo
     ignore = true;
     if (op === 'play') { player.currentTime = at; player.play(); }
