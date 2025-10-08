@@ -159,7 +159,7 @@ async function setupPeer(file) {
 player.on('play',       () => !ignore && broadcast('play', player.currentTime));
 player.on('pause',      () => !ignore && broadcast('pause', player.currentTime));
 let last = 0;
-player.on('seeked', () => {
+player.on('timeupdate', () => {
   if (Math.abs(player.currentTime - last) > 1) broadcast('play', player.currentTime);
   last = player.currentTime;
 });
