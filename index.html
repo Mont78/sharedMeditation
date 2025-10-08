@@ -95,7 +95,7 @@ function listenCommands() {
     if (!snap.exists()) return;
     const {op, at, uid:from} = snap.val();
     if (from === uid) return;          // own echo
-    ignore = true;
+    /*ignore = true;*/
     if (op === 'play') { v.currentTime = at; player.play(); }
     if (op === 'pause') { v.currentTime = at; player.pause(); }
     ignore = false;
