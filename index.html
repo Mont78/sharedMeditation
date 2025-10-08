@@ -156,10 +156,10 @@ async function setupPeer(file) {
 }
 
 /* ----------  sync play/pause ---------- */
-v.onplay  = () => !ignore && broadcast('play');
-v.onpause = () => !ignore && broadcast('pause');
+document.getElementById('v').onplay = () => !ignore && broadcast('play');
+document.getElementById('v').onpause = () => !ignore && broadcast('pause');
 let last = 0;
-v.onseeked = () => {
+document.getElementById('v').onseeked = () => {
   if (Math.abs(v.currentTime - last) > 1) broadcast('play'); // seek ≈ play at new time
   last = v.currentTime;
 };
