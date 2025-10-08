@@ -85,7 +85,7 @@ function loadYT(url){
 function startRoom() {
   owner = true;
   const roomRef = ref(db, 'rooms/' + roomId);
-  set(roomRef, {owner: uid, created: Date.now()});
+  set(roomRef, {owner: uid, created: Date.now()});  
   listenCommands();
   document.getElementById('status').textContent = 'Room: ' + roomId;
 }
@@ -112,6 +112,7 @@ document.getElementById('go').onclick = () => loadURL(document.getElementById('u
 function loadURL(src) {
   if (src.includes('youtube.com') || src.includes('youtu.be')) {
     player.source = {type: 'video', sources: [{provider: 'youtube', src}]};
+    loadYT(src);
   } else {
     v.src = src;
   }
