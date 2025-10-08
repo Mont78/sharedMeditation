@@ -47,6 +47,22 @@
       box-shadow:0 4px 12px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .3s;
     }
     .snack.show{opacity:1;}
+    /* Overlay QR */
+    #qrOverlay{
+      position:fixed; inset:0; background:rgba(0,0,0,.7);
+      display:flex; align-items:center; justify-content:center;
+      opacity:0; pointer-events:none; transition:opacity .3s;
+    }
+    #qrOverlay.show{opacity:1; pointer-events:auto}
+    #qrBox{
+      background:var(--surface); padding:2rem; border-radius:var(--radius);
+      text-align:center; position:relative;
+    }
+    #qrBox canvas{margin:1rem auto}
+    #qrClose{
+      position:absolute; top:.5rem; right:.75rem; background:none; border:none;
+      color:var(--accent); font-size:1.5rem; cursor:pointer;
+    }
   </style>
 </head>
 <body>
@@ -56,6 +72,7 @@
     <input id="url" placeholder="YouTube or direct .mp3/.mp4 URL">
     <button id="go" class="btn">Load</button>
     <button id="create" class="btn">Create room</button>
+    <button id="qrBtn" class="btn">QR Code</button>
     <span id="status">Not connected</span>
   </div>
 
@@ -64,6 +81,14 @@
 </div>
 
 <div id="snack" class="snack"></div>
+
+<div id="qrOverlay">
+  <div id="qrBox">
+    <button id="qrClose">&times;</button>
+    <div>Scan to join the room</div>
+    <div id="qrcode"></div>
+  </div>
+</div>
 
 <script type="module">
 /* =========  Firebase config ========= */
@@ -199,6 +224,30 @@ player.on('timeupdate', () => {
   if (Math.abs(player.currentTime - last) > 1){ broadcast('play', player.currentTime); last=player.currentTime; }
 });
 */
+
+/* ---------- QR CODE ---------- */
+const qrBtn   = document.getElementById('qrBtn');
+const qrOverlay=document.getElementById('qrOverlay');
+const qrClose = document.getElementById('qrClose');
+const qrDiv   = document.getElementById('qrcode');
+
+// carica libreria qrcode.js se non c'è
+if (!window.QRCode) {
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+  document.head.appendChild(s);
+}
+
+qrBtn.onclick = () => {
+  if (!roomId) { snack('Create a room first'); return; }
+  const url = location.origin + location.pathname + '?r=' + roomId;
+  qrDiv.innerHTML = '';                      // svuota precedente
+  qrOverlay.classList.add('show');
+  new QRCode(qrDiv, {text:url, width:200, height:200, colorDark:'#00c9ff', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.H});
+};
+qrClose.onclick = () => qrOverlay.classList.remove('show');
+qrOverlay.onclick = (e) => { if (e.target === qrOverlay) qrOverlay.classList.remove('show'); };
+
 </script>
 </body>
 </html>
