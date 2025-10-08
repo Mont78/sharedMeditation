@@ -103,7 +103,7 @@ function listenCommands() {
 }
 
 function broadcast(op, currTime) {
-  push(ref(db, 'rooms/' + roomId + '/command'), {op, at: currTime, uid})
+  set(ref(db, 'rooms/' + roomId + '/command'), {op, at: currTime, uid})
     .then(() => console.log('✅ play scritto su', ref(db, 'rooms/' + roomId + '/command').toString()))
     .catch(e => console.error('❌ write failed', e));
 }
