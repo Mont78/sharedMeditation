@@ -158,11 +158,13 @@ async function setupPeer(file) {
 /* ----------  sync play/pause ---------- */
 player.on('play',       () => !ignore && broadcast('play', player.currentTime));
 player.on('pause',      () => !ignore && broadcast('pause', player.currentTime));
+/*
 let last = 0;
 player.on('timeupdate', () => {
   if (Math.abs(player.currentTime - last) > 1) broadcast('play', player.currentTime);
   last = player.currentTime;
 });
+*/
 
 /*
 document.getElementById('v').onplay = () => !ignore && broadcast('play', v.currentTime);
