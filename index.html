@@ -1,31 +1,79 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <title>Listen Together</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <link rel="stylesheet" href="https://cdn.plyr.io/3.7.2/plyr.css"/>
-  <style>body{margin:0;font-family:system-ui;background:#111;color:#eee}
-         #topbar{padding:.6rem 1rem;background:#222}
-         input,button{padding:.4rem .8rem;margin-right:.5rem}
-         #drop{border:2px dashed #555;padding:2rem;text-align:center;margin:1rem}
+  <style>
+    :root{
+      --bg:#0f0c29; --bg2:#302b63; --bg3:#24243e;
+      --accent:#00c9ff; --accent2:#92fe9d;
+      --surface:#1e1e2f; --surface2:#2a2a40;
+      --text:#f1f1f1; --radius:14px;
+    }
+    *{box-sizing:border-box; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+    body{
+      background:linear-gradient(135deg,var(--bg),var(--bg2),var(--bg3));
+      color:var(--text); min-height:100vh; display:flex; flex-direction:column; align-items:center;
+      padding:2rem 1rem;
+    }
+    .card{
+      background:rgba(30,30,47,.65); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,.08);
+      width:100%; max-width:720px; border-radius:var(--radius);
+      box-shadow:0 8px 32px rgba(0,0,0,.37); padding:1.5rem 2rem 2rem;
+      animation:fadeIn .6s ease-out forwards;
+    }
+    @keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+    .topbar{display:flex; gap:.75rem; flex-wrap:wrap; margin-bottom:1rem;}
+    .topbar input{flex:1 1 240px; padding:.75rem 1rem; border:none; border-radius:8px; background:var(--surface2); color:var(--text);}
+    .btn{
+      padding:.75rem 1.5rem; border:none; border-radius:8px;
+      background:linear-gradient(90deg,var(--accent),var(--accent2));
+      color:#000; font-weight:600; cursor:pointer; transition:.3s;
+    }
+    .btn:hover{filter:brightness(1.1);}
+    #drop{
+      border:2px dashed var(--accent); border-radius:12px; padding:2.5rem 2rem;
+      text-align:center; transition:.3s; cursor:pointer; margin-bottom:1rem;
+    }
+    #drop.dragover{background:rgba(0,201,255,.15);}
+    #status{margin-left:auto; font-size:.9rem; opacity:.8;}
+    video{width:100%; border-radius:12px; margin-top:.5rem;}
+    .snack{
+      position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%);
+      background:var(--surface); padding:.75rem 1.25rem; border-radius:8px;
+      box-shadow:0 4px 12px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .3s;
+    }
+    .snack.show{opacity:1;}
   </style>
 </head>
 <body>
-<div id="topbar">
-  <input id="url" placeholder="YouTube or direct .mp3/.mp4 URL">
-  <button id="go">Load</button>
-  <button id="create">Create room</button>
-  <span id="status">Not connected</span>
+
+<div class="card">
+  <div class="topbar">
+    <input id="url" placeholder="YouTube or direct .mp3/.mp4 URL">
+    <button id="go" class="btn">Load</button>
+    <button id="create" class="btn">Create room</button>
+    <span id="status">Not connected</span>
+  </div>
+
+  <div id="drop">or drop a local file here</div>
+  <video id="v" controls playsinline></video>
 </div>
-<div id="drop">or drop a local file here</div>
-<video id="v" controls style="width:100%"></video>
+
+<div id="snack" class="snack"></div>
 
 <script type="module">
-/* ==========  CONFIG – paste your own ========== */
+/* =========  Firebase config ========= */
 const firebaseConfig = {
-  apiKey: "AIzaSyCce9in03U6uwBlN-eotf3WLYbK1Kn7qLw", authDomain: "shared-meditation.firebaseapp.com", databaseURL: "https://shared-meditation-default-rtdb.europe-west1.firebasedatabase.app/", projectId: "shared-meditation"
+  apiKey: "AIzaSyCce9in03U6uwBlN-eotf3WLYbK1Kn7qLw",
+  authDomain: "shared-meditation.firebaseapp.com",
+  databaseURL: "https://shared-meditation-default-rtdb.europe-west1.firebasedatabase.app/",
+  projectId: "shared-meditation"
 };
-/* ============================================== */
+/* ==================================== */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
 import { getDatabase, ref, push, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
@@ -39,14 +87,12 @@ const auth = getAuth(app);
 await signInAnonymously(auth);
 
 let roomId = new URLSearchParams(location.search).get('r');
-let owner = false;
-let ignore = false;               // ignore our own Firebase echoes
-let peer;
-let uid = auth.currentUser.uid;
+let owner = false, ignore = false, peer, uid = auth.currentUser.uid;
 const v = document.getElementById('v');
 const player = new Plyr(v, {youtube: { noCookie: false }});
-  
-/* ----------  room handling ---------- */
+const snack = txt => { const s=document.getElementById('snack'); s.textContent=txt; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2500); };
+
+/* ---------- room ---------- */
 if (!roomId) {
   document.getElementById('create').onclick = () => {
     roomId = Math.random().toString(36).slice(2,8);
@@ -57,123 +103,100 @@ if (!roomId) {
   startRoom();
 }
 
-/* 1.  if a source was already chosen, load it now */
+function startRoom() {
+  owner = true;
+  set(ref(db, 'rooms/' + roomId), {owner: uid, created: Date.now()});
+  listenCommands();
+  document.getElementById('status').textContent = 'Room: ' + roomId;
+  snack('Room created – share the URL!');
+}
+
+/* ---------- source ---------- */
 const roomSource = ref(db, 'rooms/' + roomId + '/source');
 onValue(roomSource, snap => {
-  if (!snap.exists()) return;          // nessuno ha ancora scelto
+  if (!snap.exists()) return;
   const {src, provider} = snap.val();
-  if (src && !player.currentSrc) {     // evita ricaricare due volte
-      player.source = {
-        type: 'video',
-        sources: [{provider, src}],
-        origin: window.location.origin  // ← risolve anche i problemi Safari
-      };
+  if (src && !player.currentSrc) {
+      player.source = { type: 'video', sources: [{provider, src}], origin: window.location.origin };
+      snack('Video loaded');
   }
 });
 
-/* 2.  quando il primo utente sceglie, salvalo in Firebase */
 function loadYT(url){
-  player.source = {
-    type: 'video',
-    sources: [{provider:'youtube', src:url}],
-    origin: window.location.origin
-  };
-  set(ref(db, 'rooms/' + roomId + '/source'),
-     {src:url, provider:'youtube'});
+  player.source = { type: 'video', sources: [{provider:'youtube', src:url}], origin: window.location.origin };
+  set(ref(db, 'rooms/' + roomId + '/source'), {src:url, provider:'youtube'});
 }
 
-function startRoom() {
-  owner = true;
-  const roomRef = ref(db, 'rooms/' + roomId);
-  set(roomRef, {owner: uid, created: Date.now()});  
-  listenCommands();
-  document.getElementById('status').textContent = 'Room: ' + roomId;
-}
+document.getElementById('go').onclick = () => {
+  const u = document.getElementById('url').value.trim();
+  if (!u) return;
+  if (!roomId) { snack('Create a room first'); return; }
+  if (u.includes('youtube')||u.includes('youtu.be')) loadYT(u);
+  else { v.src=u; set(ref(db,'rooms/'+roomId+'/source'),{src:u,provider:'html5'}); }
+};
 
-function listenCommands() {
-  onValue(ref(db, 'rooms/' + roomId + '/command'), snap => {
-    if (!snap.exists()) return;
-    const {op, at, uid:from} = snap.val();
-    console.log('Valore cambiato - op:', op, ' - from:', from);
-    if (from === uid) return;          // own echo
-    ignore = true;
-    if (op === 'play') { player.currentTime = at; player.play(); }
-    if (op === 'pause') { player.currentTime = at; player.pause(); }
-    ignore = false;
-  });
-}
-
-function broadcast(op, currTime) {
-  set(ref(db, 'rooms/' + roomId + '/command'), {op, at: currTime, uid})
-    .then(() => console.log('✅ play scritto da', uid.toString()))
-    .catch(e => console.error('❌ write failed', e));
-}
-
-/* ----------  media source ---------- */
-document.getElementById('go').onclick = () => loadURL(document.getElementById('url').value);
-
-function loadURL(src) {
-  if (src.includes('youtube.com') || src.includes('youtu.be')) {
-    player.source = {type: 'video', sources: [{provider: 'youtube', src}]};
-    loadYT(src);
-  } else {
-    v.src = src;
-  }
-}
-
-/* drag-drop local file */
+/* ---------- drag-drop ---------- */
 const drop = document.getElementById('drop');
-drop.ondragover = e => e.preventDefault();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('dragover'); };
+drop.ondragleave = () => drop.classList.remove('dragover');
 drop.ondrop = async e => {
-  e.preventDefault();
+  e.preventDefault(); drop.classList.remove('dragover');
   const file = e.dataTransfer.files[0];
   if (!file) return;
-  drop.style.display = 'none';
-  if (!roomId) { alert('Create a room first'); return; }
+  if (!roomId) { snack('Create a room first'); return; }
+  drop.style.display='none';
   if (owner) {
     v.src = URL.createObjectURL(file);
     await setupPeer(file);
   } else {
-    await setupPeer();          // receiver side
+    await setupPeer();
   }
 };
 
-/* ----------  WebRTC for local file ---------- */
+/* ---------- WebRTC ---------- */
 async function setupPeer(file) {
   peer = new SimplePeer({ initiator: !!file, trickle: false });
   if (file) {
-    peer.on('signal', data => push(ref(db, 'rooms/' + roomId + '/signal'), data));
-    const buf = await file.arrayBuffer();
-    peer.on('connect', () => peer.send(buf));
+    peer.on('signal', data => push(ref(db, 'rooms/' + roomId + '/signal'), JSON.stringify(data)));
+    const CHUNK=16384; const chunks=[];
+    for (let i=0;i<file.size;i+=CHUNK) chunks.push(file.slice(i,i+CHUNK));
+    peer.on('connect', () => { (function sendNext(){
+      if (!chunks.length) { peer.send('EOF'); return; }
+      peer.send(chunks.shift()); setTimeout(sendNext,20);
+    })();});
   } else {
-    onValue(ref(db, 'rooms/' + roomId + '/signal'), snap => {
-      if (snap.exists()) peer.signal(snap.val());
-    });
+    onValue(ref(db, 'rooms/' + roomId + '/signal'), snap => { if (snap.exists()) peer.signal(JSON.parse(snap.val())); });
+    const recv=[]; let fileType='video/mp4';
     peer.on('data', buf => {
-      const blob = new Blob([buf], {type: file ? file.type : 'video/mp4'});
-      v.src = URL.createObjectURL(blob);
+      if (buf==='EOF'){ const blob=new Blob(recv,{type:fileType}); v.src=URL.createObjectURL(blob); }
+      else recv.push(buf);
     });
   }
 }
 
-/* ----------  sync play/pause ---------- */
-player.on('play',       () => !ignore && broadcast('play', player.currentTime));
-player.on('pause',      () => !ignore && broadcast('pause', player.currentTime));
-let last = 0;
+/* ---------- commands ---------- */
+function listenCommands(){
+  onValue(ref(db, 'rooms/' + roomId + '/command'), snap => {
+    if (!snap.exists()) return;
+    const {op,at,from} = snap.val();
+    if (from === uid) return;
+    ignore=true;
+    if (op==='play') { player.currentTime=at; player.play(); }
+    if (op==='pause'){ player.currentTime=at; player.pause(); }
+    ignore=false;
+  });
+}
+function broadcast(op, currTime){
+  set(ref(db, 'rooms/' + roomId + '/command'), {op, at: currTime, uid})
+    .then(() => console.log('✅', op, 'scritto'))
+    .catch(e => console.error('❌ write failed', e));
+}
+let last=0;
+player.on('play',  () => !ignore && broadcast('play', player.currentTime));
+player.on('pause', () => !ignore && broadcast('pause', player.currentTime));
 player.on('timeupdate', () => {
-  if (Math.abs(player.currentTime - last) > 1) broadcast('play', player.currentTime);
-  last = player.currentTime;
+  if (Math.abs(player.currentTime - last) > 1){ broadcast('play', player.currentTime); last=player.currentTime; }
 });
-
-/*
-document.getElementById('v').onplay = () => !ignore && broadcast('play', v.currentTime);
-document.getElementById('v').onpause = () => !ignore && broadcast('pause', v.currentTime);
-let last = 0;
-document.getElementById('v').onseeked = () => {
-  if (Math.abs(v.currentTime - last) > 1) broadcast('play', v.currentTime); // seek ≈ play at new time
-  last = v.currentTime;
-};
-*/
 </script>
 </body>
 </html>
