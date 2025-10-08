@@ -102,8 +102,8 @@ function listenCommands() {
   });
 }
 
-function broadcast(op) {
-  set(ref(db, 'rooms/' + roomId + '/command'), {op, at: v.currentTime, uid})
+function broadcast(op, currTime) {
+  set(ref(db, 'rooms/' + roomId + '/command'), {op, at: currTime, uid})
     .then(() => console.log('✅ play scritto su', ref(db, 'rooms/' + roomId + '/command').toString()))
     .catch(e => console.error('❌ write failed', e));
 }
@@ -156,18 +156,18 @@ async function setupPeer(file) {
 }
 
 /* ----------  sync play/pause ---------- */
-player.on('play',       () => !ignore && broadcast('play'));
-player.on('pause',      () => !ignore && broadcast('pause'));
+player.on('play',       () => !ignore && broadcast('play', player.currentTime));
+player.on('pause',      () => !ignore && broadcast('pause', player.currentTime));
 player.on('seeked', () => {
-  if (Math.abs(player.currentTime - last) > 1) broadcast('play');
+  if (Math.abs(player.currentTime - last) > 1) broadcast('play', player.currentTime);
   last = player.currentTime;
 });
 
-document.getElementById('v').onplay = () => !ignore && broadcast('play');
-document.getElementById('v').onpause = () => !ignore && broadcast('pause');
+document.getElementById('v').onplay = () => !ignore && broadcast('play', v.currentTime);
+document.getElementById('v').onpause = () => !ignore && broadcast('pause', v.currentTime);
 let last = 0;
 document.getElementById('v').onseeked = () => {
-  if (Math.abs(v.currentTime - last) > 1) broadcast('play'); // seek ≈ play at new time
+  if (Math.abs(v.currentTime - last) > 1) broadcast('play', v.currentTime); // seek ≈ play at new time
   last = v.currentTime;
 };
 </script>
