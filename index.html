@@ -120,7 +120,7 @@ const v      = document.getElementById('v');
 const player = new Plyr(v, {youtube:{noCookie:false}});
 const snack  = txt => { const s=document.getElementById('snack'); s.textContent=txt; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2500); };
 
-/* ---------- crea / entra ---------- */
+/* ---------- stanza ---------- */
 if (!roomId) {
   document.getElementById('create').onclick = () => {
     roomId = Math.random().toString(36).slice(2,8);
@@ -138,7 +138,7 @@ function startRoom() {
   snack('Room created – share the URL!');
 }
 
-/* ---------- YT / direct link ---------- */
+/* ---------- YT / link ---------- */
 const roomSource = ref(db, 'rooms/' + roomId + '/source');
 onValue(roomSource, snap => {
   if (!snap.exists()) return;
@@ -170,29 +170,29 @@ drop.ondrop = async e => {
   if (!file) return;
   if (!roomId) { snack('Create a room first'); return; }
   drop.style.display='none';
-
   if (owner) {
-    // 1) metto i metadati nel db PRIMA di tutto
     await set(ref(db, 'rooms/' + roomId + '/file'), {name:file.name, type:file.type, size:file.size});
-    // 2) creo il peer → quando è connesso parte il chunk-stream
     buildSenderPeer(file);
   }
 };
 
-/* ---------- WebRTC ---------- */
+/* ---------- WebRTC con TURN ---------- */
 const signalRef = ref(db, 'rooms/' + roomId + '/signal');
+const iceConfig = {
+  iceServers: [
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+    // TURN gratuito Meterpool (credenza pubblica, banda 1 Gb/mese)
+    {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'}
+  ]
+};
 
 /* ---- sender ---- */
 function buildSenderPeer(file) {
-  peer = new SimplePeer({initiator:true, trickle:false});
-
-  peer.on('signal', data => {
-    set(signalRef, {from:uid, data:JSON.stringify(data)});
-  });
-
-  /*  <--  QUI la parte mancante: aspetto connect  -->  */
+  peer = new SimplePeer({initiator:true, config:iceConfig, trickle:false});
+  peer.on('signal', data => set(signalRef, {from:uid, data:JSON.stringify(data)}));
   peer.on('connect', () => {
-    snack('Trasferimento avviato');
+    snack('Peer connesso – inizio trasferimento');
     const CHUNK = 16384;
     const chunks = [];
     for (let i = 0; i < file.size; i += CHUNK) chunks.push(file.slice(i, i + CHUNK));
@@ -202,8 +202,7 @@ function buildSenderPeer(file) {
       setTimeout(sendNext, 20);
     })();
   });
-
-  // fallback: se non si connette entro 8s rifaccio l’offerta
+  // retry se non connesso entro 8s
   setTimeout(() => { if (peer && !peer.connected) { remove(signalRef); buildSenderPeer(file); } }, 8000);
 }
 
@@ -214,10 +213,8 @@ onValue(ref(db, 'rooms/' + roomId + '/file'), snap => {
   if (!peer) buildReceiverPeer();
 });
 function buildReceiverPeer() {
-  peer = new SimplePeer({initiator:false, trickle:false});
-  peer.on('signal', data => {
-    set(signalRef, {from:uid, data:JSON.stringify(data)});
-  });
+  peer = new SimplePeer({initiator:false, config:iceConfig, trickle:false});
+  peer.on('signal', data => set(signalRef, {from:uid, data:JSON.stringify(data)}));
   onValue(signalRef, snap => {
     if (!snap.exists()) return;
     const {from, data} = snap.val();
