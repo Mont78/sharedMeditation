@@ -101,7 +101,7 @@ const firebaseConfig = {
 /* ==================================== */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, set, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
 import Plyr from "https://cdn.skypack.dev/plyr@3.7.2";
 import SimplePeer from "https://cdn.skypack.dev/simple-peer@9.11.1";
@@ -171,6 +171,8 @@ drop.ondrop = async e => {
   if (!roomId) { snack('Create a room first'); return; }
   drop.style.display='none';
   if (owner) {
+    // 1) pubblichiamo il meta-file
+    await set(ref(db, 'rooms/' + roomId + '/file'), {name:file.name, type:file.type, size:file.size});
     v.src = URL.createObjectURL(file);
     await setupPeer(file);
   } else {
@@ -178,23 +180,40 @@ drop.ondrop = async e => {
   }
 };
 
-/* ---------- WebRTC ---------- */
+/* ---------- WebRTC (file) ---------- */
 async function setupPeer(file) {
   peer = new SimplePeer({ initiator: !!file, trickle: false });
+  // se sono il mittente pubblico i segnali
   if (file) {
     peer.on('signal', data => push(ref(db, 'rooms/' + roomId + '/signal'), JSON.stringify(data)));
-    const CHUNK=16384; const chunks=[];
-    for (let i=0;i<file.size;i+=CHUNK) chunks.push(file.slice(i,i+CHUNK));
-    peer.on('connect', () => { (function sendNext(){
-      if (!chunks.length) { peer.send('EOF'); return; }
-      peer.send(chunks.shift()); setTimeout(sendNext,20);
-    })();});
-  } else {
-    onValue(ref(db, 'rooms/' + roomId + '/signal'), snap => { if (snap.exists()) peer.signal(JSON.parse(snap.val())); });
-    const recv=[]; let fileType='video/mp4';
+    const CHUNK = 16384;
+    const chunks = [];
+    for (let i = 0; i < file.size; i += CHUNK) chunks.push(file.slice(i, i + CHUNK));
+    peer.on('connect', () => {
+      (function sendNext() {
+        if (!chunks.length) { peer.send('EOF'); return; }
+        peer.send(chunks.shift());
+        setTimeout(sendNext, 20);
+      })();
+    });
+  }
+  // se sono il ricevitore ascolto i segnali e ricostruisco il file
+  else {
+    onValue(ref(db, 'rooms/' + roomId + '/signal'), snap => {
+      if (snap.exists()) peer.signal(JSON.parse(snap.val()));
+    });
+    const recv = [];
+    let fileType = 'video/mp4';
+    // se c'è il metadata prendo il tipo corretto
+    onValue(ref(db, 'rooms/' + roomId + '/file'), snap => {
+      if (snap.exists()) fileType = snap.val().type || fileType;
+    });
     peer.on('data', buf => {
-      if (buf==='EOF'){ const blob=new Blob(recv,{type:fileType}); v.src=URL.createObjectURL(blob); }
-      else recv.push(buf);
+      if (buf === 'EOF') {
+        const blob = new Blob(recv, { type: fileType });
+        v.src = URL.createObjectURL(blob);
+        snack('File ricevuto');
+      } else recv.push(buf);
     });
   }
 }
@@ -219,11 +238,6 @@ function broadcast(op, currTime){
 let last=0;
 player.on('play',  () => !ignore && broadcast('play', player.currentTime));
 player.on('pause', () => !ignore && broadcast('pause', player.currentTime));
-/*
-player.on('timeupdate', () => {
-  if (Math.abs(player.currentTime - last) > 1){ broadcast('play', player.currentTime); last=player.currentTime; }
-});
-*/
 
 /* ---------- QR CODE ---------- */
 const qrBtn   = document.getElementById('qrBtn');
