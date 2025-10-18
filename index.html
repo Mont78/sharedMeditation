@@ -91,7 +91,7 @@
 </div>
 
 <script type="module">
-/* ---------- config Firebase ---------- */
+/* ---------- Firebase ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyCce9in03U6uwBlN-eotf3WLYbK1Kn7qLw",
   authDomain: "shared-meditation.firebaseapp.com",
@@ -109,12 +109,12 @@ const db   = getDatabase(app);
 const auth = getAuth(app);
 await signInAnonymously(auth);
 
-let roomId  = new URLSearchParams(location.search).get('r');
-let owner   = false;
-let ignore  = false;
-let peer    = null;
-let uid     = auth.currentUser.uid;
-let fileMeta= null;                // metadati del file locale
+let roomId   = new URLSearchParams(location.search).get('r');
+let owner    = false;
+let ignore   = false;
+let peer     = null;
+let uid      = auth.currentUser.uid;
+let fileMeta = null;
 
 const v      = document.getElementById('v');
 const player = new Plyr(v, {youtube:{noCookie:false}});
@@ -138,7 +138,7 @@ function startRoom() {
   snack('Room created – share the URL!');
 }
 
-/* ---------- YouTube / link diretto ---------- */
+/* ---------- YT / direct link ---------- */
 const roomSource = ref(db, 'rooms/' + roomId + '/source');
 onValue(roomSource, snap => {
   if (!snap.exists()) return;
@@ -172,27 +172,27 @@ drop.ondrop = async e => {
   drop.style.display='none';
 
   if (owner) {
-    // 1) prima avviso tutti che c’è un file
+    // 1) metto i metadati nel db PRIMA di tutto
     await set(ref(db, 'rooms/' + roomId + '/file'), {name:file.name, type:file.type, size:file.size});
-    // 2) poi costruisco il peer → parte l’offerta
-    v.src = URL.createObjectURL(file);
+    // 2) creo il peer → quando è connesso parte il chunk-stream
     buildSenderPeer(file);
-  } else {
-    // il receiver parte quando vede /file (onValue sotto)
   }
 };
 
 /* ---------- WebRTC ---------- */
 const signalRef = ref(db, 'rooms/' + roomId + '/signal');
 
-/* ---- mittente ---- */
+/* ---- sender ---- */
 function buildSenderPeer(file) {
   peer = new SimplePeer({initiator:true, trickle:false});
+
   peer.on('signal', data => {
-    set(signalRef, {from:uid, data:JSON.stringify(data)});   // unico nodo
+    set(signalRef, {from:uid, data:JSON.stringify(data)});
   });
+
+  /*  <--  QUI la parte mancante: aspetto connect  -->  */
   peer.on('connect', () => {
-    snack('Trasferimento iniziato');
+    snack('Trasferimento avviato');
     const CHUNK = 16384;
     const chunks = [];
     for (let i = 0; i < file.size; i += CHUNK) chunks.push(file.slice(i, i + CHUNK));
@@ -202,7 +202,8 @@ function buildSenderPeer(file) {
       setTimeout(sendNext, 20);
     })();
   });
-  // se dopo 8s non connesso → riprovo
+
+  // fallback: se non si connette entro 8s rifaccio l’offerta
   setTimeout(() => { if (peer && !peer.connected) { remove(signalRef); buildSenderPeer(file); } }, 8000);
 }
 
@@ -215,14 +216,14 @@ onValue(ref(db, 'rooms/' + roomId + '/file'), snap => {
 function buildReceiverPeer() {
   peer = new SimplePeer({initiator:false, trickle:false});
   peer.on('signal', data => {
-    set(signalRef, {from:uid, data:JSON.stringify(data)});   // answer
+    set(signalRef, {from:uid, data:JSON.stringify(data)});
   });
   onValue(signalRef, snap => {
     if (!snap.exists()) return;
     const {from, data} = snap.val();
-    if (from === uid) return;          // mio pacchetto
+    if (from === uid) return;
     peer.signal(JSON.parse(data));
-    remove(signalRef);                 // pulisco subito
+    remove(signalRef);
   });
   const recv = [];
   peer.on('data', buf => {
@@ -230,12 +231,12 @@ function buildReceiverPeer() {
       const blob = new Blob(recv, {type: fileMeta?.type || 'video/mp4'});
       v.src = URL.createObjectURL(blob);
       snack('File ricevuto!');
-      remove(ref(db, 'rooms/' + roomId + '/file'));   // opzionale: libero
+      remove(ref(db, 'rooms/' + roomId + '/file'));
     } else recv.push(buf);
   });
 }
 
-/* ---------- sync play/pause ---------- */
+/* ---------- sync ---------- */
 function listenCommands(){
   onValue(ref(db, 'rooms/' + roomId + '/command'), snap => {
     if (!snap.exists()) return;
