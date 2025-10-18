@@ -364,4 +364,9 @@ qrBtn.onclick = () => {
   qrOverlay.classList.add('show');
   new QRCode(qrDiv, {text:url, width:200, height:200, colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.H});
 };
-qrClose
+qrClose.onclick = () => qrOverlay.classList.remove('show');
+qrOverlay.onclick = (e) => { if (e.target === qrOverlay) qrOverlay.classList.remove('show'); };
+
+</script>
+</body>
+</html>
