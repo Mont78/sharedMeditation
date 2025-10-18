@@ -11,6 +11,7 @@
       --accent:#00c9ff; --accent2:#92fe9d;
       --surface:#1e1e2f; --surface2:#2a2a40;
       --text:#f1f1f1; --radius:14px;
+      --meGrad: linear-gradient(135deg,var(--accent),var(--accent2));
     }
     *{box-sizing:border-box; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
     body{
@@ -47,22 +48,38 @@
       box-shadow:0 4px 12px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .3s;
     }
     .snack.show{opacity:1;}
-    /* Overlay QR */
-    #qrOverlay{
+
+    /* -------- CHAT -------- */
+    #chatWrap{margin-top:1.2rem; display:flex; flex-direction:column; height:280px;}
+    #chatBox{
+      flex:1 1 0; overflow-y:auto; padding:.5rem;
+      background:rgba(0,0,0,.2); border-radius:var(--radius);
+    }
+    .msg{ margin-bottom:.7rem; display:flex; align-items:flex-end; animation: fadeIn .4s;}
+    .msg.me{ flex-direction: row-reverse; }
+    .bub{
+      max-width:70%; padding:.6rem .9rem; border-radius: 18px;
+      background:var(--surface2); color:var(--text); font-size:.95rem; line-height:1.3;
+      box-shadow:0 2px 6px rgba(0,0,0,.25);
+    }
+    .msg.me .bub{ background: var(--meGrad); color:#000; }
+    .nick{
+      font-size:.75rem; opacity:.75; margin:0 .4rem .2rem;
+    }
+    #chatForm{ display:flex; gap:.5rem; margin-top:.5rem; }
+    #chatInput{ flex:1; padding:.6rem 1rem; border:none; border-radius:8px; background:var(--surface2); color:var(--text); }
+    /* popup nome */
+    #nameOverlay{
       position:fixed; inset:0; background:rgba(0,0,0,.7);
       display:flex; align-items:center; justify-content:center;
       opacity:0; pointer-events:none; transition:opacity .3s;
     }
-    #qrOverlay.show{opacity:1; pointer-events:auto}
-    #qrBox{
+    #nameOverlay.show{opacity:1; pointer-events:auto}
+    #nameBox{
       background:var(--surface); padding:2rem; border-radius:var(--radius);
-      text-align:center; position:relative;
+      text-align:center; width:90%; max-width:360px;
     }
-    #qrBox canvas{margin:1rem auto}
-    #qrClose{
-      position:absolute; top:.5rem; right:.75rem; background:none; border:none;
-      color:var(--accent); font-size:1.5rem; cursor:pointer;
-    }
+    #nameBox input{ width:100%; padding:.7rem; margin:.8rem 0 1rem; border:none; border-radius:8px; background:var(--surface2); color:var(--text);}
   </style>
 </head>
 <body>
@@ -78,10 +95,30 @@
 
   <div id="drop">or drop a local file here</div>
   <video id="v" controls playsinline></video>
+
+  <!-- CHAT -->
+  <div id="chatWrap">
+    <div id="chatBox"></div>
+    <form id="chatForm">
+      <input id="chatInput" placeholder="Scrivi un messaggio…" required autocomplete="off"/>
+      <button type="submit" class="btn">Invia</button>
+    </form>
+  </div>
 </div>
 
 <div id="snack" class="snack"></div>
 
+<!-- Popup nome -->
+<div id="nameOverlay">
+  <div id="nameBox">
+    <h3>Benvenuto!</h3>
+    <p>Scegli un nickname per la chat</p>
+    <input id="nameInput" maxlength="20" placeholder="Es. Mario" required/>
+    <button id="nameSave" class="btn">Salva</button>
+  </div>
+</div>
+
+<!-- Overlay QR -->
 <div id="qrOverlay">
   <div id="qrBox">
     <button id="qrClose">&times;</button>
@@ -91,33 +128,63 @@
 </div>
 
 <script type="module">
-/* =========  Firebase config ========= */
+/* --------------------------------------------------
+   Firebase config
+-------------------------------------------------- */
 const firebaseConfig = {
   apiKey: "AIzaSyCce9in03U6uwBlN-eotf3WLYbK1Kn7qLw",
   authDomain: "shared-meditation.firebaseapp.com",
   databaseURL: "https://shared-meditation-default-rtdb.europe-west1.firebasedatabase.app/",
   projectId: "shared-meditation"
 };
-/* ==================================== */
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, set, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
 import Plyr from "https://cdn.skypack.dev/plyr@3.7.2";
 import SimplePeer from "https://cdn.skypack.dev/simple-peer@9.11.1";
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const app  = initializeApp(firebaseConfig);
+const db   = getDatabase(app);
 const auth = getAuth(app);
 await signInAnonymously(auth);
 
-let roomId = new URLSearchParams(location.search).get('r');
-let owner = false, ignore = false, peer, uid = auth.currentUser.uid;
-const v = document.getElementById('v');
-const player = new Plyr(v, {youtube: { noCookie: false }});
-const snack = txt => { const s=document.getElementById('snack'); s.textContent=txt; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2500); };
+let roomId   = new URLSearchParams(location.search).get('r');
+let owner    = false;
+let ignore   = false;
+let peer     = null;
+let uid      = auth.currentUser.uid;
+let fileMeta = null;
 
-/* ---------- room ---------- */
+const v      = document.getElementById('v');
+const player = new Plyr(v, {youtube:{noCookie:false}});
+const snack  = txt => { const s=document.getElementById('snack'); s.textContent=txt; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2500); };
+
+/* ---------- cookies ---------- */
+const getCookie = (k)=> document.cookie.split('; ').find(r=>r.startsWith(k+'='))?.split('=')[1];
+const setCookie = (k,v,days=90)=>{
+  document.cookie = `${k}=${v}; max-age=${days*24*3600}; path=/; SameSite=Lax`;
+};
+
+/* ---------- global name ---------- */
+function ensureGlobalName(){
+  const name = getCookie('chatname');
+  if (name) return Promise.resolve(name);
+  const overlay = document.getElementById('nameOverlay');
+  overlay.classList.add('show');
+  return new Promise(res=>{
+    const save=()=>{
+      const nick=document.getElementById('nameInput').value.trim()||'Anon';
+      setCookie('chatname',nick);
+      overlay.classList.remove('show');
+      res(nick);
+    };
+    document.getElementById('nameSave').onclick=save;
+    document.getElementById('nameInput').addEventListener('keydown',e=>{if(e.key==='Enter')save();});
+  });
+}
+const chatNamePromise = ensureGlobalName();
+
+/* ---------- stanza ---------- */
 if (!roomId) {
   document.getElementById('create').onclick = () => {
     roomId = Math.random().toString(36).slice(2,8);
@@ -127,7 +194,6 @@ if (!roomId) {
 } else {
   startRoom();
 }
-
 function startRoom() {
   owner = true;
   set(ref(db, 'rooms/' + roomId), {owner: uid, created: Date.now()});
@@ -136,22 +202,20 @@ function startRoom() {
   snack('Room created – share the URL!');
 }
 
-/* ---------- source ---------- */
+/* ---------- YT / direct link ---------- */
 const roomSource = ref(db, 'rooms/' + roomId + '/source');
 onValue(roomSource, snap => {
   if (!snap.exists()) return;
   const {src, provider} = snap.val();
   if (src && !player.currentSrc) {
-      player.source = { type: 'video', sources: [{provider, src}], origin: window.location.origin };
-      snack('Video loaded');
+    player.source = {type:'video', sources:[{provider, src}], origin: location.origin};
+    snack('Video caricato');
   }
 });
-
-function loadYT(url){
-  player.source = { type: 'video', sources: [{provider:'youtube', src:url}], origin: window.location.origin };
+function loadYT(url) {
+  player.source = {type:'video', sources:[{provider:'youtube', src:url}], origin: location.origin};
   set(ref(db, 'rooms/' + roomId + '/source'), {src:url, provider:'youtube'});
 }
-
 document.getElementById('go').onclick = () => {
   const u = document.getElementById('url').value.trim();
   if (!u) return;
@@ -171,83 +235,133 @@ drop.ondrop = async e => {
   if (!roomId) { snack('Create a room first'); return; }
   drop.style.display='none';
   if (owner) {
-    v.src = URL.createObjectURL(file);
-    await setupPeer(file);
-  } else {
-    await setupPeer();
+    await set(ref(db, 'rooms/' + roomId + '/file'), {name:file.name, type:file.type, size:file.size});
+    buildSenderPeer(file);
   }
 };
 
-/* ---------- WebRTC ---------- */
-async function setupPeer(file) {
-  peer = new SimplePeer({ initiator: !!file, trickle: false });
-  if (file) {
-    peer.on('signal', data => push(ref(db, 'rooms/' + roomId + '/signal'), JSON.stringify(data)));
-    const CHUNK=16384; const chunks=[];
-    for (let i=0;i<file.size;i+=CHUNK) chunks.push(file.slice(i,i+CHUNK));
-    peer.on('connect', () => { (function sendNext(){
+/* ---------- WebRTC  con TURN ---------- */
+const signalRef = ref(db, 'rooms/' + roomId + '/signal');
+const iceConfig = {
+  iceServers: [
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+    {urls:'turn:openrelay.metered.ca:80', username:'openrelayproject', credential:'openrelayproject'}
+  ]
+};
+function buildSenderPeer(file) {
+  peer = new SimplePeer({initiator:true, config:iceConfig, trickle:false});
+  peer.on('signal', data => set(signalRef, {from:uid, data:JSON.stringify(data)}));
+  peer.on('connect', () => {
+    snack('Trasferimento avviato');
+    const CHUNK = 16384;
+    const chunks = [];
+    for (let i = 0; i < file.size; i += CHUNK) chunks.push(file.slice(i, i + CHUNK));
+    (function sendNext() {
       if (!chunks.length) { peer.send('EOF'); return; }
-      peer.send(chunks.shift()); setTimeout(sendNext,20);
-    })();});
-  } else {
-    onValue(ref(db, 'rooms/' + roomId + '/signal'), snap => { if (snap.exists()) peer.signal(JSON.parse(snap.val())); });
-    const recv=[]; let fileType='video/mp4';
-    peer.on('data', buf => {
-      if (buf==='EOF'){ const blob=new Blob(recv,{type:fileType}); v.src=URL.createObjectURL(blob); }
-      else recv.push(buf);
-    });
-  }
+      peer.send(chunks.shift());
+      setTimeout(sendNext, 20);
+    })();
+  });
+  setTimeout(() => { if (peer && !peer.connected) { remove(signalRef); buildSenderPeer(file); } }, 8000);
+}
+onValue(ref(db, 'rooms/' + roomId + '/file'), snap => {
+  if (!snap.exists()) return;
+  fileMeta = snap.val();
+  if (!peer) buildReceiverPeer();
+});
+function buildReceiverPeer() {
+  peer = new SimplePeer({initiator:false, config:iceConfig, trickle:false});
+  peer.on('signal', data => set(signalRef, {from:uid, data:JSON.stringify(data)}));
+  onValue(signalRef, snap => {
+    if (!snap.exists()) return;
+    const {from, data} = snap.val();
+    if (from === uid) return;
+    peer.signal(JSON.parse(data));
+    remove(signalRef);
+  });
+  const recv = [];
+  peer.on('data', buf => {
+    if (buf === 'EOF') {
+      const blob = new Blob(recv, {type: fileMeta?.type || 'video/mp4'});
+      v.src = URL.createObjectURL(blob);
+      snack('File ricevuto!');
+      remove(ref(db, 'rooms/' + roomId + '/file'));
+    } else recv.push(buf);
+  });
 }
 
-/* ---------- commands ---------- */
+/* ---------- CHAT ---------- */
+const chatBox = document.getElementById('chatBox');
+const chatForm = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatInput');
+
+function renderMsg(data){
+  const div = document.createElement('div');
+  div.className = data.uid === uid ? 'msg me' : 'msg';
+  div.innerHTML = `
+    <div>
+      <div class="nick">${escapeHtml(data.name)}</div>
+      <div class="bub">${escapeHtml(data.text)}</div>
+    </div>`;
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+function escapeHtml(str){
+  return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+const chatRef = ref(db, 'rooms/' + roomId + '/chat');
+onValue(chatRef, snap => {
+  if (!snap.exists()) return;
+  const msgs = snap.val();
+  chatBox.innerHTML='';
+  Object.values(msgs).sort((a,b)=>a.ts-b.ts).forEach(renderMsg);
+});
+
+chatForm.addEventListener('submit', async e=>{
+  e.preventDefault();
+  const text = chatInput.value.trim();
+  if (!text) return;
+  const name = await chatNamePromise;
+  push(chatRef, {uid, name, text, ts:Date.now()});
+  chatInput.value='';
+});
+
+/* ---------- player sync ---------- */
 function listenCommands(){
   onValue(ref(db, 'rooms/' + roomId + '/command'), snap => {
     if (!snap.exists()) return;
     const {op,at,from} = snap.val();
     if (from === uid) return;
     ignore=true;
-    if (op==='play') { player.currentTime=at; player.play(); }
-    if (op==='pause'){ player.currentTime=at; player.pause(); }
+    if (op==='play')  { player.currentTime=at; player.play(); }
+    if (op==='pause') { player.currentTime=at; player.pause(); }
     ignore=false;
   });
 }
 function broadcast(op, currTime){
-  set(ref(db, 'rooms/' + roomId + '/command'), {op, at: currTime, uid})
-    .then(() => console.log('✅', op, 'scritto'))
-    .catch(e => console.error('❌ write failed', e));
+  set(ref(db, 'rooms/' + roomId + '/command'), {op, at: currTime, uid});
 }
 let last=0;
 player.on('play',  () => !ignore && broadcast('play', player.currentTime));
 player.on('pause', () => !ignore && broadcast('pause', player.currentTime));
-/*
-player.on('timeupdate', () => {
-  if (Math.abs(player.currentTime - last) > 1){ broadcast('play', player.currentTime); last=player.currentTime; }
-});
-*/
 
-/* ---------- QR CODE ---------- */
+/* ---------- QR ---------- */
 const qrBtn   = document.getElementById('qrBtn');
 const qrOverlay=document.getElementById('qrOverlay');
 const qrClose = document.getElementById('qrClose');
 const qrDiv   = document.getElementById('qrcode');
-
-// carica libreria qrcode.js se non c'è
 if (!window.QRCode) {
   const s = document.createElement('script');
   s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
   document.head.appendChild(s);
 }
-
 qrBtn.onclick = () => {
   if (!roomId) { snack('Create a room first'); return; }
   const url = location.origin + location.pathname + '?r=' + roomId;
-  qrDiv.innerHTML = '';                      // svuota precedente
+  qrDiv.innerHTML = '';
   qrOverlay.classList.add('show');
-  new QRCode(qrDiv, {text:url, width:200, height:200, colorDark:'#000000', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.H});
+  new QRCode(qrDiv, {text:url, width:200, height:200, colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.H});
 };
-qrClose.onclick = () => qrOverlay.classList.remove('show');
-qrOverlay.onclick = (e) => { if (e.target === qrOverlay) qrOverlay.classList.remove('show'); };
-
-</script>
-</body>
-</html>
+qrClose
